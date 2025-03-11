@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hermes Extension Options</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hermes Extension Options</h1>
+    <form id="options-form">
+      <label>
+        API Server URL:
+        <input
+          type="text"
+          id="apiUrl"
+          placeholder="http://127.0.0.1:50000/download"
+        />
+      </label>
+      <label>
+        Target Extensions (comma separated):
+        <input
+          type="text"
+          id="targetExtensions"
+          placeholder="mp4,mkv,webm,m3u8,vtt"
+        />
+      </label>
+      <label>
+        <input type="checkbox" id="targetBlockingEnabled" />
+        Enable Target Request Blocking
+      </label>
+      <button type="submit">Save</button>
+    </form>
+    <script src="option.js"></script>
+  </body>
+</html>

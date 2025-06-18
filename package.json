@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "main": "index.js",
   "scripts": {
+    "build": "npx webpack --config webpack.config.ts --mode development",
+    "buildprod": "npx webpack --config webpack.config.ts --mode production",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -10,13 +12,13 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "@types/chrome": "^0.0.310",
+    "@types/chrome": "^0.0.326",
     "@types/firefox-webext-browser": "^120.0.4",
     "copy-webpack-plugin": "^13.0.0",
     "ts-loader": "^9.5.2",
-    "typescript": "^5.8.2",
-    "webpack": "^5.98.0",
-    "webpack-cli": "^6.0.1",
-    "web-ext": "^8.5.0"
+    "typescript": "^5.8.3",
+    "web-ext": "^8.7.1",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
   }
 }

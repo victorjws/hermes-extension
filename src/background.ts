@@ -18,6 +18,7 @@ import {
 
 const blockedVideos: Record<number, { url: string; requestId: string }[]> = {};
 const allowedVideos: Record<number, { url: string; requestId: string }[]> = {};
+const requestHeadersCache: Record<string, Array<Header>> = {};
 
 let apiUrl = DEFAULT_API_URL;
 let targetExtensions = DEFAULT_TARGET_EXTENSIONS;
@@ -97,6 +98,7 @@ function sendDownloadRequest(url: string, headers?: Array<Header>) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: jsonData,
+    mode: "cors",
   }).catch((error) =>
     console.error("[Background] Download request failed:", error)
   );
@@ -105,7 +107,9 @@ function sendDownloadRequest(url: string, headers?: Array<Header>) {
 function transformHeaders(headers: Header[]): { [key: string]: string } {
   const headerMap: { [key: string]: string } = {};
   headers.forEach((header: Header) => {
-    headerMap[header.name] = header.value;
+    if (header.value !== undefined) {
+      headerMap[header.name] = header.value;
+    }
   });
   return headerMap;
 }
@@ -304,3 +308,42 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ targets });
   }
 });
+
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    const headers = details.requestHeaders;
+    if (headers !== undefined) {
+      requestHeadersCache[details.requestId] = headers;
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"]
+);
+
+browser.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    const responseHeaders = details.responseHeaders || [];
+    const contentDisposition = responseHeaders.find(
+      (h) => h.name.toLowerCase() === "content-disposition"
+    );
+
+    if (
+      contentDisposition &&
+      /attachment/i.test(contentDisposition.value || "")
+    ) {
+      const contentType = responseHeaders.find(
+        (h) => h.name.toLowerCase() === "content-type"
+      );
+
+      const reqHeaders = requestHeadersCache[details.requestId] || {};
+
+      sendDownloadRequest(details.url, reqHeaders);
+
+      delete requestHeadersCache[details.requestId];
+    } else {
+      delete requestHeadersCache[details.requestId];
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["responseHeaders"]
+);

@@ -1,6 +1,6 @@
 export interface Header {
   name: string;
-  value: string;
+  value?: string;
 }
 
 export interface Message {

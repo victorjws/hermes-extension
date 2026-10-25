@@ -93,6 +93,33 @@ describe("download requests", () => {
     fake.downloads.onCreated.fire({ url: "https://a.test/2" });
     expect(fetchMock.mock.calls[1][0]).toBe("http://sync.test/x");
   });
+
+  it("applies every setting changed by a single save", async () => {
+    await load();
+    fake.storage.onChanged.fire(
+      {
+        apiUrl: { newValue: "http://sync.test/x" },
+        targetBlockingEnabled: { newValue: true },
+        targetExtensions: { newValue: ["mp4"] },
+      },
+      "sync"
+    );
+
+    fake.downloads.onCreated.fire({ url: "https://a.test/1" });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://sync.test/x");
+
+    const request = { tabId: 7, requestId: "r1" };
+    const [mp4] = fake.webRequest.onBeforeRequest.fire({
+      ...request,
+      url: "https://a.test/clip.mp4",
+    });
+    const [webm] = fake.webRequest.onBeforeRequest.fire({
+      ...request,
+      url: "https://a.test/clip.webm",
+    });
+    expect(mp4).toEqual({ cancel: true });
+    expect(webm).toBeUndefined();
+  });
 });
 
 describe("context menu", () => {

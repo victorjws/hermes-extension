@@ -76,9 +76,11 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "sync") {
     if (changes[API_URL]) {
       apiUrl = changes[API_URL].newValue;
-    } else if (changes[TARGET_EXTENSIONS]) {
+    }
+    if (changes[TARGET_EXTENSIONS]) {
       targetExtensions = changes[TARGET_EXTENSIONS].newValue;
-    } else if (changes[TARGET_BLOCKING_ENABLED]) {
+    }
+    if (changes[TARGET_BLOCKING_ENABLED]) {
       targetBlockingEnabled = changes[TARGET_BLOCKING_ENABLED].newValue;
     }
   }

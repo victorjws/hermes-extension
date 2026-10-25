@@ -37,3 +37,11 @@ If videos do not appear due to cross-site or embedding restrictions, you can man
 1. Open the Video Sniffer Panel: First, open your browser’s developer tools and navigate to the Video Sniffer panel.
 2. Reload or Visit the Video Page: After the panel is open, reload the current page or navigate to the page containing the video. The panel will now detect network requests for common video file extensions.
 3. Initiate the Download: Once the video requests appear in the Video Sniffer panel, manually start the download by clicking the desired video entry.
+
+### Single-use Streaming Playlists
+
+Some sites serve an HLS (`.m3u8`) or DASH (`.mpd`) playlist from a URL that works only once. Once the page's player has requested it, `hermes-downloader` can no longer fetch it. Enable **Enable Target Request Blocking** in the options page to handle these:
+
+- The playlist request is cancelled before it reaches the server and is sent to `hermes-downloader` together with its request headers (cookies, referer).
+- Only extensions that are in **Target Extensions** are handled, so keep `m3u8` (and add `mpd` if you need DASH).
+- Because the request is cancelled, the page's own player will not play the stream while this option is on.

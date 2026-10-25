@@ -316,6 +316,7 @@ describe("single-use streaming playlists", () => {
     expect(lastFetchBody()).toEqual({
       url: playlist.url,
       headers: { Cookie: "a=b", Referer: "https://a.test/watch" },
+      skip_head: true,
     });
   });
 

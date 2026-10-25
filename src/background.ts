@@ -82,7 +82,11 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-function sendDownloadRequest(url: string, headers?: Array<Header>) {
+function sendDownloadRequest(
+  url: string,
+  headers?: Array<Header>,
+  skipHead = false
+) {
   if (!url) {
     console.warn("[Background] No URL provided to sendDownloadRequest");
     return;
@@ -91,6 +95,7 @@ function sendDownloadRequest(url: string, headers?: Array<Header>) {
   const requestBody = {
     url,
     headers: headers ? transformHeaders(headers) : undefined,
+    skip_head: skipHead ? true : undefined,
   };
   const jsonData = JSON.stringify(requestBody);
 
@@ -248,7 +253,8 @@ function sendStreamingOnce(
   const key = `${tabId}:${url}`;
   if (streamingSentAt[key] === undefined) {
     streamingSentAt[key] = now;
-    sendDownloadRequest(url, headers);
+    // The request was cancelled to keep a single-use url alive, so hermes must not HEAD it.
+    sendDownloadRequest(url, headers, true);
   }
 }
 

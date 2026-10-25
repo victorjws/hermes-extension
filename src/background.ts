@@ -218,6 +218,40 @@ browser.runtime.onConnect.addListener((port) => {
   }
 });
 
+const STREAMING_EXTENSIONS = ["m3u8", "mpd"];
+const STREAMING_RESEND_INTERVAL_MS = 5000;
+const streamingSentAt: Record<string, number> = {};
+
+function buildTargetRegex(extensions: string[]) {
+  return new RegExp("\\.(" + extensions.join("|") + ")(?=\\?|$)", "i");
+}
+
+function isStreamingTarget(url: string) {
+  const extensions = targetExtensions.filter((ext) =>
+    STREAMING_EXTENSIONS.includes(ext.toLowerCase())
+  );
+  return extensions.length > 0 && buildTargetRegex(extensions).test(url);
+}
+
+function sendStreamingOnce(
+  tabId: number,
+  url: string,
+  headers?: Array<Header>
+) {
+  const now = Date.now();
+  for (const key in streamingSentAt) {
+    if (now - streamingSentAt[key] >= STREAMING_RESEND_INTERVAL_MS) {
+      delete streamingSentAt[key];
+    }
+  }
+
+  const key = `${tabId}:${url}`;
+  if (streamingSentAt[key] === undefined) {
+    streamingSentAt[key] = now;
+    sendDownloadRequest(url, headers);
+  }
+}
+
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     console.debug(
@@ -238,10 +272,11 @@ browser.webRequest.onBeforeRequest.addListener(
       return {};
     }
 
-    const regex = new RegExp(
-      "\\.(" + targetExtensions.join("|") + ")(?=\\?|$)",
-      "i"
-    );
+    if (isStreamingTarget(details.url)) {
+      return;
+    }
+
+    const regex = buildTargetRegex(targetExtensions);
 
     if (regex.test(details.url)) {
       console.debug("[Background] Blocking target request:", details.url);
@@ -311,6 +346,21 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 browser.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
+    if (!targetBlockingEnabled || !isStreamingTarget(details.url)) {
+      return;
+    }
+
+    console.debug("[Background] Blocking streaming request:", details.url);
+    sendStreamingOnce(details.tabId, details.url, details.requestHeaders);
+
+    return { cancel: true };
+  },
+  { urls: ["<all_urls>"], types: ["media", "xmlhttprequest"] },
+  ["blocking", "requestHeaders"]
+);
+
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
     const headers = details.requestHeaders;
     if (headers !== undefined) {
       requestHeadersCache[details.requestId] = headers;
@@ -335,7 +385,7 @@ browser.webRequest.onHeadersReceived.addListener(
         (h) => h.name.toLowerCase() === "content-type"
       );
 
-      const reqHeaders = requestHeadersCache[details.requestId] || {};
+      const reqHeaders = requestHeadersCache[details.requestId];
 
       sendDownloadRequest(details.url, reqHeaders);
 

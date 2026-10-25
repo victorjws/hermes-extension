@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Check tag matches versions
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(node -p "require('./src/manifest.json').version")"
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$manifest_version" ] || [ "$tag_version" != "$package_version" ]; then
+            echo "Tag $GITHUB_REF_NAME, src/manifest.json $manifest_version and package.json $package_version must agree" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run buildprod
+
+      - run: npx web-ext lint -s dist
+
+      - run: npm run package
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" web-ext-artifacts/*.zip --generate-notes

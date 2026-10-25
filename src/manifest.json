@@ -1,6 +1,6 @@
 {
-  "name": "Hermes Downloader",
-  "version": "0.1.0",
+  "name": "Hermes Downloader extension",
+  "version": "0.2.0",
   "manifest_version": 2,
   "background": {
     "scripts": ["background.js"],

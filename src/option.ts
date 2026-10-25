@@ -65,6 +65,10 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .then(() => {
         alert("Options saved.");
+      })
+      .catch((error) => {
+        console.error("[Option] Failed to save options:", error);
+        alert(`Failed to save options: ${error}`);
       });
   });
 });

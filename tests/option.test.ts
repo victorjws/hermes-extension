@@ -92,6 +92,17 @@ describe("options page", () => {
     expect(alert).toHaveBeenCalledWith("Options saved.");
   });
 
+  it("reports a failed save instead of staying silent", async () => {
+    await open();
+    fake.storage.sync.set.mockRejectedValueOnce(new Error("no extension id"));
+    submit();
+    await flush();
+
+    expect(alert).toHaveBeenCalledWith(
+      "Failed to save options: Error: no extension id"
+    );
+  });
+
   it("prevents the default form submission", async () => {
     await open();
     const event = new Event("submit", { cancelable: true });

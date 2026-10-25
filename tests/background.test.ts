@@ -13,6 +13,8 @@ import {
   DEFAULT_API_URL,
   DOWNLOAD_ACTION,
   GET_BLOCKED_TARGETS,
+  STREAMING_BLOCKED,
+  STREAMING_CHOICE,
   TARGET_BLOCKED,
   TARGET_DETECTED,
   TARGET_SNIFFER,
@@ -304,27 +306,34 @@ describe("single-use streaming playlists", () => {
       .fire(details)
       .find((result) => result !== undefined);
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  const choose = (choice: "play" | "download", tabId: number | null = 7) =>
+    fake.runtime.onMessage.fire(
+      { type: STREAMING_CHOICE, url: playlist.url, choice },
+      tabId === null ? {} : { tab: { id: tabId } },
+      vi.fn()
+    );
 
-  it("cancels the request and sends the url with its headers", async () => {
+  const blockedMessages = () =>
+    fake.tabs.sendMessage.mock.calls.filter(
+      ([, message]) => (message as { type: string }).type === STREAMING_BLOCKED
+    );
+
+  it("cancels the request and asks the tab without downloading", async () => {
     await load({ targetBlockingEnabled: true });
 
     expect(blockResult(playlist)).toEqual({ cancel: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(lastFetchBody()).toEqual({
+    expect(fake.tabs.sendMessage).toHaveBeenCalledWith(7, {
+      type: STREAMING_BLOCKED,
       url: playlist.url,
-      headers: { Cookie: "a=b", Referer: "https://a.test/watch" },
-      skip_head: true,
     });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("handles playlists requested as media", async () => {
     await load({ targetBlockingEnabled: true });
 
     expect(blockResult({ ...playlist, type: "media" })).toEqual({ cancel: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(blockedMessages()).toHaveLength(1);
   });
 
   it("handles .mpd when it is a configured extension", async () => {
@@ -333,13 +342,14 @@ describe("single-use streaming playlists", () => {
     expect(
       blockResult({ ...playlist, url: "https://a.test/manifest.mpd" })
     ).toEqual({ cancel: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(blockedMessages()).toHaveLength(1);
   });
 
   it("does nothing while blocking is disabled", async () => {
     await load();
 
     expect(blockResult(playlist)).toBeUndefined();
+    expect(fake.tabs.sendMessage).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -347,6 +357,7 @@ describe("single-use streaming playlists", () => {
     await load({ targetBlockingEnabled: true, targetExtensions: ["mp4"] });
 
     expect(blockResult(playlist)).toBeUndefined();
+    expect(fake.tabs.sendMessage).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -357,24 +368,94 @@ describe("single-use streaming playlists", () => {
     expect(
       blockResult({ ...playlist, url: "https://a.test/clip.mp4" })
     ).toBeUndefined();
+    expect(fake.tabs.sendMessage).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("sends the same tab and url once per 5 seconds", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+  it("asks once per tab and url, however often the player retries", async () => {
     await load({ targetBlockingEnabled: true });
 
     expect(blockResult(playlist)).toEqual({ cancel: true });
-    vi.advanceTimersByTime(4999);
     expect(blockResult(playlist)).toEqual({ cancel: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(blockedMessages()).toHaveLength(1);
 
-    vi.advanceTimersByTime(1);
+    expect(blockResult({ ...playlist, tabId: 8 })).toEqual({ cancel: true });
+    expect(blockedMessages()).toHaveLength(2);
+  });
+
+  it("downloads the stored request on the download choice, once", async () => {
+    await load({ targetBlockingEnabled: true });
     blockResult(playlist);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
 
-    blockResult({ ...playlist, tabId: 8 });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    choose("download");
+    choose("download");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastFetchBody()).toEqual({
+      url: playlist.url,
+      headers: { Cookie: "a=b", Referer: "https://a.test/watch" },
+      skip_head: true,
+    });
+  });
+
+  it("keeps cancelling retries silently after a download choice", async () => {
+    await load({ targetBlockingEnabled: true });
+    blockResult(playlist);
+    choose("download");
+
+    expect(blockResult(playlist)).toEqual({ cancel: true });
+    expect(blockedMessages()).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the url through in that tab after the play choice", async () => {
+    await load({ targetBlockingEnabled: true });
+    blockResult(playlist);
+
+    choose("play");
+
+    expect(blockResult(playlist)).toEqual({});
+    expect(blockResult({ ...playlist, tabId: 8 })).toEqual({ cancel: true });
+    expect(
+      blockResult({ ...playlist, url: "https://a.test/other.m3u8" })
+    ).toEqual({ cancel: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a choice without a stored request or a sender tab", async () => {
+    await load({ targetBlockingEnabled: true });
+
+    choose("download");
+    choose("play");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(blockResult(playlist)).toEqual({ cancel: true });
+
+    choose("download", null);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("forgets a tab's requests and allowed urls when it closes", async () => {
+    await load({ targetBlockingEnabled: true });
+    blockResult(playlist);
+    choose("play");
+
+    fake.tabs.onRemoved.fire(7);
+
+    expect(blockResult(playlist)).toEqual({ cancel: true });
+    expect(blockedMessages()).toHaveLength(2);
+  });
+
+  it("forgets a tab's requests when it starts loading a new page", async () => {
+    await load({ targetBlockingEnabled: true });
+    blockResult(playlist);
+
+    fake.tabs.onUpdated.fire(7, { status: "complete" });
+    blockResult(playlist);
+    expect(blockedMessages()).toHaveLength(1);
+
+    fake.tabs.onUpdated.fire(7, { status: "loading" });
+    blockResult(playlist);
+    expect(blockedMessages()).toHaveLength(2);
   });
 
   it("is left to the header-aware listener by onBeforeRequest", async () => {

@@ -9,6 +9,10 @@ import {
 import {
   ALLOW_TARGET,
   DOWNLOAD_ACTION,
+  DOWNLOAD_BUTTON,
+  PLAY_BUTTON,
+  STREAMING_BLOCKED,
+  STREAMING_CHOICE,
   TARGET_BLOCKED,
   UNBLOCK_TARGET,
 } from "../src/constants";
@@ -180,5 +184,66 @@ describe("blocked targets", () => {
 
     expect(load).toHaveBeenCalledTimes(1);
     expect(load.mock.contexts[0]).toBe(document.querySelector("video"));
+  });
+});
+
+describe("streaming prompt", () => {
+  const url = "https://a.test/live/index.m3u8?token=once";
+
+  const prompts = () =>
+    Array.from(document.querySelectorAll<HTMLElement>(".hermes__prompt"));
+  const promptButton = (kind: "play" | "download") =>
+    document.querySelector<HTMLButtonElement>(`.hermes__prompt__${kind}`)!;
+
+  it("shows one prompt per blocked url", async () => {
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+    fake.runtime.onMessage.fire({
+      type: STREAMING_BLOCKED,
+      url: "https://a.test/other.mpd",
+    });
+
+    expect(prompts()).toHaveLength(2);
+    expect(prompts()[0].textContent).toContain("index.m3u8");
+    expect(promptButton("play").textContent).toContain(PLAY_BUTTON);
+    expect(promptButton("download").textContent).toContain(DOWNLOAD_BUTTON);
+  });
+
+  it("sends the download choice and removes the prompt", async () => {
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+    promptButton("download").click();
+
+    expect(fake.runtime.sendMessage).toHaveBeenCalledWith({
+      type: STREAMING_CHOICE,
+      url,
+      choice: "download",
+    });
+    expect(prompts()).toHaveLength(0);
+  });
+
+  it("sends the play choice and hints for 5 seconds", async () => {
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+    promptButton("play").click();
+
+    expect(fake.runtime.sendMessage).toHaveBeenCalledWith({
+      type: STREAMING_CHOICE,
+      url,
+      choice: "play",
+    });
+    expect(promptButton("play")).toBeNull();
+    expect(prompts()).toHaveLength(1);
+
+    vi.advanceTimersByTime(4999);
+    expect(prompts()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(prompts()).toHaveLength(0);
+  });
+
+  it("can ask again for a url after its prompt is gone", async () => {
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+    promptButton("download").click();
+    fake.runtime.onMessage.fire({ type: STREAMING_BLOCKED, url });
+
+    expect(prompts()).toHaveLength(1);
   });
 });

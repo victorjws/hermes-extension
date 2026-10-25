@@ -9,6 +9,8 @@ export interface Message {
   headers?: Header[];
 }
 
+export type StreamingChoice = "play" | "download";
+
 export interface VideoSource {
   url: string;
   format: string;

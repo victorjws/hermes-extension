@@ -60,7 +60,11 @@ export function createFakeBrowser(storageData: Record<string, unknown> = {}) {
       onBeforeSendHeaders: fakeEvent(),
       onHeadersReceived: fakeEvent(),
     },
-    tabs: { sendMessage: vi.fn(async (..._args: unknown[]) => ({})) },
+    tabs: {
+      sendMessage: vi.fn(async (..._args: unknown[]) => ({})),
+      onRemoved: fakeEvent(),
+      onUpdated: fakeEvent(),
+    },
     devtools: {
       network: { onRequestFinished: fakeEvent() },
       panels: { create: vi.fn() },

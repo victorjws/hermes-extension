@@ -1,4 +1,4 @@
-import { BlockedTargetInfo, VideoSource } from "./types";
+import { BlockedTargetInfo, StreamingChoice, VideoSource } from "./types";
 import {
   ALLOW_TARGET,
   DOWNLOAD_ACTION,
@@ -6,8 +6,74 @@ import {
   GET_BLOCKED_TARGETS,
   UNBLOCK_TARGET,
   TARGET_BLOCKED,
+  STREAMING_BLOCKED,
+  STREAMING_CHOICE,
   PLAY_BUTTON,
 } from "./constants";
+
+const PROMPT_HINT_MS = 5000;
+
+function streamingName(url: string): string {
+  try {
+    return new URL(url).pathname.split("/").pop() || url;
+  } catch {
+    return url;
+  }
+}
+
+function showStreamingPrompt(url: string) {
+  const exists = Array.from(
+    document.querySelectorAll<HTMLElement>(".hermes__prompt")
+  ).some((prompt) => prompt.dataset.url === url);
+  if (exists) return;
+
+  const prompt = document.createElement("div");
+  prompt.className = "hermes__prompt";
+  prompt.dataset.url = url;
+  prompt.style.position = "fixed";
+  prompt.style.top = "8px";
+  prompt.style.right = "8px";
+  prompt.style.zIndex = "2147483647";
+  prompt.style.padding = "8px";
+  prompt.style.background = "#222";
+  prompt.style.color = "#fff";
+  prompt.style.font = "13px sans-serif";
+
+  const label = document.createElement("span");
+  label.textContent = streamingName(url) + " ";
+  prompt.appendChild(label);
+
+  const choose = (choice: StreamingChoice) => (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    browser.runtime.sendMessage({ type: STREAMING_CHOICE, url, choice });
+
+    if (choice === "play") {
+      prompt.textContent = "Press play again in the player";
+      setTimeout(() => prompt.remove(), PROMPT_HINT_MS);
+    } else {
+      prompt.remove();
+    }
+  };
+
+  const play = document.createElement("button");
+  play.className = "hermes__prompt__play";
+  play.textContent = PLAY_BUTTON;
+  play.style.margin = "2px";
+  play.style.cursor = "pointer";
+  play.addEventListener("click", choose("play"));
+  prompt.appendChild(play);
+
+  const download = document.createElement("button");
+  download.className = "hermes__prompt__download";
+  download.textContent = DOWNLOAD_BUTTON;
+  download.style.margin = "2px";
+  download.style.cursor = "pointer";
+  download.addEventListener("click", choose("download"));
+  prompt.appendChild(download);
+
+  document.body.appendChild(prompt);
+}
 
 function createButtonContainer() {
   const buttonContainer = document.createElement("div");
@@ -216,6 +282,10 @@ browser.runtime.onMessage.addListener((message) => {
     document.querySelectorAll("video").forEach((video: HTMLVideoElement) => {
       updatePlayButton(video, message);
     });
+  } else if (message.type === STREAMING_BLOCKED) {
+    console.debug("[Content] Streaming blocked, asking:", message.url);
+
+    showStreamingPrompt(message.url);
   } else if (message.type === UNBLOCK_TARGET) {
     console.debug("[Content] Unblocking target for:", message.url);
 

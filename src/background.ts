@@ -14,6 +14,8 @@ import {
   DEFAULT_TARGET_EXTENSIONS,
   DEFAULT_TARGET_BLOCKING_ENABLED,
   TARGET_SNIFFER,
+  STREAMING_BLOCKED,
+  STREAMING_CHOICE,
 } from "./constants";
 
 const blockedVideos: Record<number, { url: string; requestId: string }[]> = {};
@@ -224,8 +226,13 @@ browser.runtime.onConnect.addListener((port) => {
 });
 
 const STREAMING_EXTENSIONS = ["m3u8", "mpd"];
-const STREAMING_RESEND_INTERVAL_MS = 5000;
-const streamingSentAt: Record<string, number> = {};
+
+// Cancelled streaming requests by `${tabId}:${url}`. An entry is kept after the
+// download choice so the player's retries stay silent.
+const pendingStreams: Record<
+  string,
+  { headers?: Array<Header>; downloaded: boolean }
+> = {};
 
 function buildTargetRegex(extensions: string[]) {
   return new RegExp("\\.(" + extensions.join("|") + ")(?=\\?|$)", "i");
@@ -238,25 +245,38 @@ function isStreamingTarget(url: string) {
   return extensions.length > 0 && buildTargetRegex(extensions).test(url);
 }
 
-function sendStreamingOnce(
+function askStreamingChoice(
   tabId: number,
   url: string,
   headers?: Array<Header>
 ) {
-  const now = Date.now();
-  for (const key in streamingSentAt) {
-    if (now - streamingSentAt[key] >= STREAMING_RESEND_INTERVAL_MS) {
-      delete streamingSentAt[key];
-    }
+  const key = `${tabId}:${url}`;
+  if (pendingStreams[key] !== undefined) {
+    return;
   }
 
-  const key = `${tabId}:${url}`;
-  if (streamingSentAt[key] === undefined) {
-    streamingSentAt[key] = now;
-    // The request was cancelled to keep a single-use url alive, so hermes must not HEAD it.
-    sendDownloadRequest(url, headers, true);
-  }
+  pendingStreams[key] = { headers, downloaded: false };
+  browser.tabs
+    .sendMessage(tabId, { type: STREAMING_BLOCKED, url })
+    .catch(() => {});
 }
+
+function forgetTabStreams(tabId: number) {
+  const prefix = `${tabId}:`;
+  for (const key in pendingStreams) {
+    if (key.startsWith(prefix)) {
+      delete pendingStreams[key];
+    }
+  }
+  delete allowedVideos[tabId];
+}
+
+browser.tabs.onRemoved.addListener(forgetTabStreams);
+browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    forgetTabStreams(tabId);
+  }
+});
 
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
@@ -335,6 +355,24 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     sendResponse({ status: "Video allowed" });
+  } else if (message.type === STREAMING_CHOICE) {
+    const tabId = sender.tab?.id;
+    const key = `${tabId}:${message.url}`;
+    const pending = tabId === undefined ? undefined : pendingStreams[key];
+
+    if (tabId !== undefined && pending !== undefined && !pending.downloaded) {
+      if (message.choice === "download") {
+        pending.downloaded = true;
+        // The request was cancelled to keep a single-use url alive, so hermes must not HEAD it.
+        sendDownloadRequest(message.url, pending.headers, true);
+      } else if (message.choice === "play") {
+        delete pendingStreams[key];
+        if (!allowedVideos[tabId]) {
+          allowedVideos[tabId] = [];
+        }
+        allowedVideos[tabId].push({ url: message.url, requestId: "" });
+      }
+    }
   } else if (message.type === GET_BLOCKED_TARGETS) {
     console.debug("[Background] Get blocked targets:", message, sender);
 
@@ -356,8 +394,13 @@ browser.webRequest.onBeforeSendHeaders.addListener(
       return;
     }
 
+    if (allowedVideos[details.tabId]?.some((item) => details.url === item.url)) {
+      console.debug("[Background] Allowed streaming request:", details.url);
+      return {};
+    }
+
     console.debug("[Background] Blocking streaming request:", details.url);
-    sendStreamingOnce(details.tabId, details.url, details.requestHeaders);
+    askStreamingChoice(details.tabId, details.url, details.requestHeaders);
 
     return { cancel: true };
   },
